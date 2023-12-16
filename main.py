@@ -1,4 +1,5 @@
 from collections import UserDict
+import json
 from tabulate import tabulate
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -67,6 +68,21 @@ class Record:
         phone = self.find_phone(value)
         self.phones.remove(phone)
         return "Phone number deleted."
+    
+    def serialize(self):
+        return {
+            "name": self.name.value,
+            "phones": [phone.value for phone in self.phones],
+            "birthday": self.birthday.value if self.birthday else None
+        }
+
+    def deserialize(data):
+        record = Record(data["name"])
+        if data["birthday"]:
+            record.birthday = Birthday(data["birthday"])
+        for phone in data["phones"]:
+            record.phones.append(Phone(phone))
+        return record
 
     def __str__(self):
         phone_list = '; '.join(p.value for p in self.phones) if self.phones else 'No phones'
@@ -116,6 +132,22 @@ class AddressBook(UserDict):
                 birthdays[day_name].append(name)
 
         return birthdays
+    
+    def serialize(self):
+        return {key: self.data[key].serialize() for key in self.data}
+
+    def deserialize(self, data):
+        for name, record_data in data.items():
+            self.data[name] = Record.deserialize(record_data)
+
+    def save_to_file(self, filename):
+        with open(filename, "w") as file:
+            json.dump(self.serialize(), file, indent=4)
+
+    def load_from_file(self, filename):
+        with open(filename, "r") as file:
+            data = json.load(file)
+            self.deserialize(data)
         
     def __str__(self):
         table = []
@@ -126,7 +158,9 @@ class AddressBook(UserDict):
 class CommandHandler:
     def __init__(self, book):
         self.book = book
-        self.init_test_records()
+
+        if not book.data:
+            self.init_test_records()
 
     def init_test_records(self):
         for name, value in TEST_RECORDS.items():
@@ -241,6 +275,11 @@ class CommandHandler:
 
 def main():
     book = AddressBook()
+    try:
+        book.load_from_file("address_book.json")
+    except FileNotFoundError:
+        pass
+
     handler = CommandHandler(book)
 
     print("Welcome to the assistant bot!")
@@ -251,11 +290,13 @@ def main():
             command, *args = parse_input(user_input)
 
             if command in ["close", "exit", "bye"]:
-                print("Good bye!")
+                book.save_to_file("address_book.json")
+                print("\nGood bye!")
                 break
 
             handler.execute_command(command, args)
         except KeyboardInterrupt:
+            book.save_to_file("address_book.json")
             print("\nGood bye!")
             return
 
